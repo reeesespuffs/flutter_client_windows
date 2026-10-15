@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.14)
 project(fluxer_app LANGUAGES CXX)
 
+add_compile_definitions(_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
+
 set(BINARY_NAME "fluxer_app")
 
 cmake_policy(VERSION 3.14...3.25)
