@@ -30,8 +30,7 @@ jobs:
         run: |
           $buildNum = "${{ github.run_number }}"
           if ([string]::IsNullOrWhiteSpace($buildNum)) { $buildNum = "1" }
-          Write-Host "Using build number: $buildNum"
-          Write-Host "build_number=$buildNum" >> $env:GITHUB_OUTPUT
+          echo "build_number=$buildNum" >> $env:GITHUB_OUTPUT
 
       - name: Set up Flutter
         uses: axi92/flutter-action@72633a794ba0b23276fa4fc465a6cacb758a90c5
@@ -57,6 +56,15 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
+      - name: Patch Resolve Symlinks
+        run: |
+          $files = Get-ChildItem -Path "$env:USERPROFILE\AppData\Local\Pub\Cache\hosted\pub.dev" -Recurse -Filter "resolve_symlinks.ps1"
+          foreach ($file in $files) {
+            $content = Get-Content $file.FullName -Raw
+            $content = $content -replace '\$item = Get-Item \$realPath', '$item = Get-Item "$realPath"'
+            Set-Content -Path $file.FullName -Value $content -NoNewline
+          }
+
       - name: Run build_runner
         run: dart run build_runner build
 
@@ -75,7 +83,6 @@ jobs:
           $releaseDir = "build\windows\x64\runner\Release"
           $zipName = "fluxer_app-windows-x64-${{ steps.beta_version_name.outputs.version_name }}.zip"
           Compress-Archive -Path "$releaseDir\*" -DestinationPath $zipName
-          Write-Host "Packaged to $zipName"
 
       - name: Upload Windows build artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
