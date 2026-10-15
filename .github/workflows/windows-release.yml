@@ -1,0 +1,85 @@
+name: Windows Release
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    name: Build Windows Release
+    runs-on: windows-latest
+    environment: release-builds
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event_name == 'workflow_call' && 'beta' || github.ref }}
+          submodules: recursive
+
+      - name: Resolve beta version name
+        id: beta_version_name
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/resolve_beta_version_name.sh
+
+      - name: Set Build Number
+        id: set_build_number
+        run: |
+          $buildNum = "${{ github.run_number }}"
+          if ([string]::IsNullOrWhiteSpace($buildNum)) { $buildNum = "1" }
+          Write-Host "Using build number: $buildNum"
+          Write-Host "build_number=$buildNum" >> $env:GITHUB_OUTPUT
+
+      - name: Set up Flutter
+        uses: axi92/flutter-action@72633a794ba0b23276fa4fc465a6cacb758a90c5
+        with:
+          channel: stable
+
+      - name: Restore pub cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ~\AppData\Local\Pub\Cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-
+
+      - name: Configure build tree
+        run: dart tool/configure_build.dart --profile=oss
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Run build_runner
+        run: dart run build_runner build
+
+      - name: Build Windows Release
+        run: >
+          flutter build windows --release 
+          --build-name ${{ steps.beta_version_name.outputs.version_name }} 
+          --build-number ${{ steps.set_build_number.outputs.build_number }} 
+          --dart-define-from-file=tool/dart_defines/beta.json 
+          --dart-define=PUSH_PROVIDER=unifiedpush 
+          --dart-define=BUILD_TIMESTAMP="${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}" 
+          --dart-define=BETA_NUMBER=${{ steps.beta_version_name.outputs.beta_number }}
+
+      - name: Package Windows build artifact
+        run: |
+          $releaseDir = "build\windows\x64\runner\Release"
+          $zipName = "fluxer_app-windows-x64-${{ steps.beta_version_name.outputs.version_name }}.zip"
+          Compress-Archive -Path "$releaseDir\*" -DestinationPath $zipName
+          Write-Host "Packaged to $zipName"
+
+      - name: Upload Windows build artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: windows-release-build
+          path: fluxer_app-windows-x64-*.zip
+          if-no-files-found: error
